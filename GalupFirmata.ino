@@ -35,6 +35,10 @@
   #include <avr/power.h>
 #endif
 
+// DHT11 Supoort
+#include "DHT.h"
+#define DHTTYPE11 DHT11
+
 #define I2C_WRITE                   B00000000
 #define I2C_READ                    B00001000
 #define I2C_READ_CONTINUOUSLY       B00010000
@@ -50,6 +54,15 @@
 // the minimum interval for sampling analog input
 #define MINIMUM_SAMPLING_INTERVAL   1
 
+// DFROBOT PH Meter Support
+#define PH_ARRAY_LENGTH 40
+#define PH_OFFSET 0.0
+
+// DFROBOT EC Meter Support
+#include <OneWire.h>
+#define StartConvert 0
+#define ReadTemperature 1
+#define VitamineThreshold 8
 
 /*==============================================================================
  * GLOBAL VARIABLES
@@ -100,9 +113,10 @@ byte servoCount = 0;
 boolean isResetting = false;
 
 int light_init = 0;
-//int light_flag = 0;
 // How many NeoPixels are attached to the Arduino?
-//int NUMPIXELS = 0;
+// When we setup the NeoPixel library, we tell it how many pixels, and which pin to use to send signals.
+// Note that for older NeoPixel strips you might need to change the third parameter--see the strandtest
+// example for more information on possible values.
 #define MAX_NEOPIXEL_STRIP 8
 struct neopixel_strip_list {
   int pin;
@@ -113,10 +127,17 @@ struct neopixel_strip_list {
 };
 neopixel_strip_list led_list[MAX_NEOPIXEL_STRIP];
 
-// When we setup the NeoPixel library, we tell it how many pixels, and which pin to use to send signals.
-// Note that for older NeoPixel strips you might need to change the third parameter--see the strandtest
-// example for more information on possible values.
-Adafruit_NeoPixel pixels;
+struct dht_data {
+  float humidity;
+  float temp_c;
+  float temp_f;
+  float heat_index_f;
+  float heat_index_c;
+};
+dht_data dht_info;
+
+// EC Variables
+#define EC_ARRAY_LENGTH 20
 
 // Forward declare a few functions to avoid compiler errors with older versions
 // of the Arduino IDE.
@@ -141,6 +162,48 @@ byte wireRead(void)
 #else
   return Wire.receive();
 #endif
+}
+
+double averageArray(int *arr, int number)
+{
+  int i;
+  int max, min;
+  double avg;
+  long amount = 0;
+  if (number <= 0) {
+    Serial.println("Error number for the array to averaging!\n");
+    return 0;
+  }
+  if (number < 5) { // less than 5, calculated directly statistics
+    for (i=0; i < number; i++) {
+      amount += arr[i];
+    }
+    avg = amount / number;
+    return avg;
+  } else {
+    if (arr[0] < arr[1]) {
+      min = arr[0];
+      max = arr[1];
+    } else {
+      min = arr[1];
+      max = arr[0];
+    }
+    for (i=2; i < number; i++) {
+      if (arr[i] < min) {
+        amount += min; // arr < min
+        min = arr[i];
+      } else {
+        if (arr[i] > max) {
+          amount += max; // arr > max
+          max = arr[i];
+        } else {
+          amount += arr[i]; // min <= arr <= max
+        }
+      } // if
+    } // for
+    avg = (double)amount / (number - 2);
+  } // if
+  return avg;
 }
 
 /*==============================================================================
@@ -499,6 +562,47 @@ void reportDigitalCallback(byte port, int value)
   // pins configured as analog
 }
 
+// OnewWire Temperature
+float TempProcess(bool ch, byte pin)
+{
+  // returns the temperature from one DS18B20 in DEG Celsius
+  static byte data[12];
+  static byte addr[8];
+  static float TemperatureSum;
+  OneWire ds(pin);
+  if (!ch) {
+    if (!ds.search(addr)) {
+      // Serial.println("no more sensors on chain, reset search!");
+      ds.reset_search();
+      return 0;
+    }
+    if (OneWire::crc8(addr,7) != addr[7]) {
+      Serial.println("CRC is not valid!");
+      return 0;
+    }
+    if (addr[0] != 0x10 && addr[0] != 0x28) {
+      Serial.print("Device is not recognized!");
+      return 0;
+    }
+    ds.reset();
+    ds.select(addr);
+    ds.write(0x44,1); // start conversion, with parasite power on at the end
+  } else {
+    byte present = ds.reset();
+    ds.select(addr);
+    ds.write(0xBE); // Read Scratchpad
+    for (int i = 0; i < 9; i++) { // we need 9 bytes
+      data[i] = ds.read();
+    }
+    ds.reset_search();
+    byte MSB = data[1];
+    byte LSB = data[0];
+    float tempRead = ((MSB << 8) | LSB); // using two's compliment
+    TemperatureSum = tempRead / 16;
+  }
+  return TemperatureSum;
+}
+
 /*==============================================================================
  * SYSEX-BASED commands
  *============================================================================*/
@@ -752,7 +856,120 @@ void sysexCallback(byte command, byte argc, byte *argv)
       }
 
       light_init = 1;
-      //light_flag = action;
+      break;
+    }
+    case 0x28: // DhtReport
+    {
+      byte pin = argv[0];
+
+      // Initialize DHT sensor.
+      DHT dht11(pin, DHTTYPE11); // TODO - Select type for DHT 22 or later
+      dht11.begin();
+      //getDhtData()
+      dht_info.humidity = dht11.readHumidity();
+      dht_info.temp_c = dht11.readTemperature();
+      dht_info.temp_f = dht11.readTemperature(true);
+      dht_info.heat_index_f = dht11.computeHeatIndex(dht_info.temp_f, dht_info.humidity);
+      dht_info.heat_index_c = dht11.computeHeatIndex(dht_info.temp_c, dht_info.humidity, false);
+      Serial.write(START_SYSEX);
+      Serial.write(STRING_DATA);
+      Serial.print("DHT,");
+      Serial.print(dht_info.humidity);
+      Serial.print(",");
+      Serial.print(dht_info.temp_c);
+      Serial.print(",");
+      Serial.print(dht_info.temp_f);
+      Serial.print(",");
+      Serial.print(dht_info.heat_index_f);
+      Serial.print(",");
+      Serial.print(dht_info.heat_index_c);
+      Serial.println();
+      Serial.write(END_SYSEX);
+      break;
+    }
+    case 0x38: // PhReport
+    {
+      byte pin = argv[0];
+      byte PHsensorPin;
+      if (pin == 0) {
+        PHsensorPin = A0;
+      } else if (pin == 1) {
+        PHsensorPin = A1;
+      } else if (pin == 2) {
+        PHsensorPin = A2;
+      } else if (pin == 3) {
+        PHsensorPin = A3;
+      } else if (pin == 4) {
+        PHsensorPin = A4;
+      } else if (pin == 5) {
+        PHsensorPin = A5;
+      } else {
+        PHsensorPin = A2;
+      }
+      float phValue, voltage;
+      int phArray[PH_ARRAY_LENGTH];
+      int phArrayIndex = 0;
+      unsigned long samplingTime = millis();
+      // FIXME - SYSEX CMD blocking during SAMPLING_INTERVAL
+      while(phArrayIndex != PH_ARRAY_LENGTH) {
+        if (millis() - samplingTime > SAMPLING_INTERVAL) {
+          phArray[phArrayIndex++] = analogRead(PHsensorPin);
+          samplingTime = millis();
+        }
+      }
+      voltage = averageArray(phArray, PH_ARRAY_LENGTH) * 5.0  / 1024;
+      phValue = 3.5 * voltage + PH_OFFSET;
+
+      Serial.write(START_SYSEX);
+      Serial.write(STRING_DATA);
+      Serial.print("PH,");
+      Serial.print(phValue);
+      Serial.println();
+      Serial.write(END_SYSEX);
+      break;
+    }
+    case 0x48: // EcReport
+    {
+      byte pin = argv[0];
+      byte ECsensorPin;
+      if (pin == 0) {
+        ECsensorPin = A0;
+      } else if (pin == 1) {
+        ECsensorPin = A1;
+      } else if (pin == 2) {
+        ECsensorPin = A2;
+      } else if (pin == 3) {
+        ECsensorPin = A3;
+      } else if (pin == 4) {
+        ECsensorPin = A4;
+      } else if (pin == 5) {
+        ECsensorPin = A5;
+      } else {
+        ECsensorPin = A1;
+      }
+      int ecArray[EC_ARRAY_LENGTH] = {0,};
+      byte DS18B20_Pin = argv[1];
+      TempProcess(StartConvert, DS18B20_Pin);
+      // Sampling
+      int ecArrayIndex = 0;
+      unsigned long samplingTime = millis();
+      // FIXME - SYSEX CMD blocking during SAMPLING_INTERVAL
+      while (ecArrayIndex != EC_ARRAY_LENGTH) {
+        if (millis() - samplingTime > SAMPLING_INTERVAL) {
+          ecArray[ecArrayIndex++] = analogRead(ECsensorPin);
+          samplingTime = millis();
+        }
+      }
+      float ecAverage = averageArray(ecArray, EC_ARRAY_LENGTH);
+      float ecVoltage = ecAverage * (float)5000/1024;
+      Serial.write(START_SYSEX);
+      Serial.write(STRING_DATA);
+      Serial.print("EC,");
+      Serial.print(ecAverage);
+      Serial.print(",");
+      Serial.print(ecVoltage);
+      Serial.println();
+      Serial.write(END_SYSEX);
       break;
     }
     case SERIAL_MESSAGE:
@@ -926,7 +1143,7 @@ void loop()
             } else if (led_list[i].color == 3) { // Blue Color
                  led_list[i].pixels->setPixelColor(j, led_list[i].pixels->Color(0,0,255)); // Moderately bright green color.
             } else { // White Color by default
-                 led_list[i].pixels->setPixelColor(j, led_list[i].pixels->Color(255 ,255,255)); // Moderately bright green color.
+                 led_list[i].pixels->setPixelColor(j, led_list[i].pixels->Color(255,255,255)); // Moderately bright green color.
             }
           } else { // Turn Off
             led_list[i].pixels->setPixelColor(j, led_list[i].pixels->Color(0,0,0)); // Moderately bright green color.
