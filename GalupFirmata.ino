@@ -566,13 +566,14 @@ void reportDigitalCallback(byte port, int value)
 float TempProcess(bool ch, byte pin)
 {
   // returns the temperature from one DS18B20 in DEG Celsius
-  static byte data[12];
-  static byte addr[8];
-  static float TemperatureSum;
+  byte data[12];
+  byte addr[8];
+  float TemperatureSum = -1.0;
+
   OneWire ds(pin);
-  if (!ch) {
+  //if (!ch) {
     if (!ds.search(addr)) {
-      // Serial.println("no more sensors on chain, reset search!");
+      Serial.println("no more sensors on chain, reset search!");
       ds.reset_search();
       return 0;
     }
@@ -587,7 +588,7 @@ float TempProcess(bool ch, byte pin)
     ds.reset();
     ds.select(addr);
     ds.write(0x44,1); // start conversion, with parasite power on at the end
-  } else {
+  //} else {
     byte present = ds.reset();
     ds.select(addr);
     ds.write(0xBE); // Read Scratchpad
@@ -599,7 +600,7 @@ float TempProcess(bool ch, byte pin)
     byte LSB = data[0];
     float tempRead = ((MSB << 8) | LSB); // using two's compliment
     TemperatureSum = tempRead / 16;
-  }
+ // }
   return TemperatureSum;
 }
 
@@ -949,25 +950,55 @@ void sysexCallback(byte command, byte argc, byte *argv)
       }
       int ecArray[EC_ARRAY_LENGTH] = {0,};
       byte DS18B20_Pin = argv[1];
-      TempProcess(StartConvert, DS18B20_Pin);
+      //TempProcess(StartConvert, DS18B20_Pin);
       // Sampling
       int ecArrayIndex = 0;
       unsigned long samplingTime = millis();
       // FIXME - SYSEX CMD blocking during SAMPLING_INTERVAL
+      unsigned int AnalogSampleInterval=25,tempSampleInterval=850;
+      //float ecTemperature = -1.0;
       while (ecArrayIndex != EC_ARRAY_LENGTH) {
-        if (millis() - samplingTime > SAMPLING_INTERVAL) {
+        //if (millis() - samplingTime > SAMPLING_INTERVAL) {
+        if (millis() - samplingTime > AnalogSampleInterval) {
           ecArray[ecArrayIndex++] = analogRead(ECsensorPin);
-          samplingTime = millis();
+          //samplingTime = millis();
         }
+        #if 0
+        delay(830);
+        if (millis() - samplingTime > tempSampleInterval) {
+          ecTemperature = TempProcess(ReadTemperature, DS18B20_Pin);
+          //TempProcess(StartConvert, DS18B20_Pin);
+        }
+        #endif
       }
       float ecAverage = averageArray(ecArray, EC_ARRAY_LENGTH);
       float ecVoltage = ecAverage * (float)5000/1024;
+      float ecTemperature = TempProcess(ReadTemperature, DS18B20_Pin);
+      //TempProcess(StartConvert, DS18B20_Pin);
+      float ecCurrent = -1.0;
+      float TempCoefficient=1.0+0.0185*(ecTemperature-25.0);    //temperature compensation formula: fFinalResult(25^C) = fFinalResult(current)/(1.0+0.0185*(fTP-25.0));
+      float CoefficientVolatge=(float)ecVoltage/TempCoefficient;   
+      if(CoefficientVolatge<150) Serial.println("No solution!");   //25^C 1413us/cm<-->about 216mv  if the voltage(compensate)<150,that is <1ms/cm,out of the range
+      else if(CoefficientVolatge>3300) Serial.println("Out of the range!");  //>20ms/cm,out of the range
+      else
+      { 
+        if(CoefficientVolatge<=448)ecCurrent=6.84*CoefficientVolatge-64.32;   //1ms/cm<EC<=3ms/cm
+        else if(CoefficientVolatge<=1457)ecCurrent=6.98*CoefficientVolatge-127;  //3ms/cm<EC<=10ms/cm
+        else ecCurrent=5.3*CoefficientVolatge+2278;                           //10ms/cm<EC<20ms/cm
+        ecCurrent/=1000;    //convert us/cm to ms/cm
+        //Serial.print(ecCurrent,2);  //two decimal
+        //Serial.println("ms/cm");
+      }
       Serial.write(START_SYSEX);
       Serial.write(STRING_DATA);
       Serial.print("EC,");
       Serial.print(ecAverage);
       Serial.print(",");
       Serial.print(ecVoltage);
+      Serial.print(",");
+      Serial.print(ecTemperature);
+      Serial.print(",");
+      Serial.print(ecCurrent,2);
       Serial.println();
       Serial.write(END_SYSEX);
       break;
