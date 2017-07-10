@@ -910,13 +910,9 @@ void sysexCallback(byte command, byte argc, byte *argv)
       float phValue, voltage;
       int phArray[PH_ARRAY_LENGTH];
       int phArrayIndex = 0;
-      unsigned long samplingTime = millis();
-      // FIXME - SYSEX CMD blocking during SAMPLING_INTERVAL
       while(phArrayIndex != PH_ARRAY_LENGTH) {
-        if (millis() - samplingTime > SAMPLING_INTERVAL) {
           phArray[phArrayIndex++] = analogRead(PHsensorPin);
-          samplingTime = millis();
-        }
+          delay(20);
       }
       voltage = averageArray(phArray, PH_ARRAY_LENGTH) * 5.0  / 1024;
       phValue = 3.5 * voltage + PH_OFFSET;
@@ -950,31 +946,16 @@ void sysexCallback(byte command, byte argc, byte *argv)
       }
       int ecArray[EC_ARRAY_LENGTH] = {0,};
       byte DS18B20_Pin = argv[1];
-      //TempProcess(StartConvert, DS18B20_Pin);
       // Sampling
       int ecArrayIndex = 0;
-      unsigned long samplingTime = millis();
-      // FIXME - SYSEX CMD blocking during SAMPLING_INTERVAL
       unsigned int AnalogSampleInterval=25,tempSampleInterval=850;
-      //float ecTemperature = -1.0;
       while (ecArrayIndex != EC_ARRAY_LENGTH) {
-        //if (millis() - samplingTime > SAMPLING_INTERVAL) {
-        if (millis() - samplingTime > AnalogSampleInterval) {
-          ecArray[ecArrayIndex++] = analogRead(ECsensorPin);
-          //samplingTime = millis();
-        }
-        #if 0
-        delay(830);
-        if (millis() - samplingTime > tempSampleInterval) {
-          ecTemperature = TempProcess(ReadTemperature, DS18B20_Pin);
-          //TempProcess(StartConvert, DS18B20_Pin);
-        }
-        #endif
+        ecArray[ecArrayIndex++] = analogRead(ECsensorPin);
+        delay(25);
       }
       float ecAverage = averageArray(ecArray, EC_ARRAY_LENGTH);
       float ecVoltage = ecAverage * (float)5000/1024;
       float ecTemperature = TempProcess(ReadTemperature, DS18B20_Pin);
-      //TempProcess(StartConvert, DS18B20_Pin);
       float ecCurrent = -1.0;
       float TempCoefficient=1.0+0.0185*(ecTemperature-25.0);    //temperature compensation formula: fFinalResult(25^C) = fFinalResult(current)/(1.0+0.0185*(fTP-25.0));
       float CoefficientVolatge=(float)ecVoltage/TempCoefficient;   
@@ -986,8 +967,6 @@ void sysexCallback(byte command, byte argc, byte *argv)
         else if(CoefficientVolatge<=1457)ecCurrent=6.98*CoefficientVolatge-127;  //3ms/cm<EC<=10ms/cm
         else ecCurrent=5.3*CoefficientVolatge+2278;                           //10ms/cm<EC<20ms/cm
         ecCurrent/=1000;    //convert us/cm to ms/cm
-        //Serial.print(ecCurrent,2);  //two decimal
-        //Serial.println("ms/cm");
       }
       Serial.write(START_SYSEX);
       Serial.write(STRING_DATA);
