@@ -907,8 +907,8 @@ void sysexCallback(byte command, byte argc, byte *argv)
       } else {
         PHsensorPin = A2;
       }
-      float phValue, voltage;
-      int phArray[PH_ARRAY_LENGTH];
+      float phValue = 0.0, voltage = 0.0;
+      int phArray[PH_ARRAY_LENGTH] = {0,};
       int phArrayIndex = 0;
       while(phArrayIndex != PH_ARRAY_LENGTH) {
           phArray[phArrayIndex++] = analogRead(PHsensorPin);
