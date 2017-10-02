@@ -120,7 +120,7 @@ int light_init = 0;
 #define MAX_NEOPIXEL_STRIP 8
 struct neopixel_strip_list {
   int pin;
-  int numpixels;
+  //int numpixels;
   int color; // 0 - White, 1 - Red, 2 - Green, 3 - Blue
   int action;
   Adafruit_NeoPixel *pixels;
@@ -836,10 +836,11 @@ void sysexCallback(byte command, byte argc, byte *argv)
       for (int i=0; i < MAX_NEOPIXEL_STRIP; i++) {
         if (led_list[i].pin == 0 || led_list[i].pin == pin) {
           led_list[i].pin = pin;
-          led_list[i].numpixels = numpixels;
+          //led_list[i].numpixels = numpixels;
           led_list[i].color = color;
           if (led_list[i].pixels == NULL) {
-            led_list[i].pixels = new Adafruit_NeoPixel(led_list[i].numpixels, led_list[i].pin, NEO_GRB + NEO_KHZ800);
+            //led_list[i].pixels = new Adafruit_NeoPixel(led_list[i].numpixels, led_list[i].pin, NEO_GRB + NEO_KHZ800);
+            led_list[i].pixels = new Adafruit_NeoPixel(numpixels, led_list[i].pin, NEO_GRB + NEO_KHZ800);
             // This is for Trinket 5V 16MHz, you can remove these three lines if you are not using a Trinket
             #if defined (__AVR_ATtiny85__)
               if (F_CPU == 16000000) clock_prescale_set(clock_div_1);
@@ -848,7 +849,8 @@ void sysexCallback(byte command, byte argc, byte *argv)
 
             led_list[i].pixels->begin(); // This initializes the NeoPixel library.
           } else {
-            led_list[i].pixels->updateLength(led_list[i].numpixels);
+            //led_list[i].pixels->updateLength(led_list[i].numpixels);
+            led_list[i].pixels->updateLength(numpixels);
             led_list[i].pixels->setPin(led_list[i].pin);
           }
           led_list[i].action = action;
@@ -1061,7 +1063,7 @@ void setup()
 
   for (int i = 0; i < MAX_NEOPIXEL_STRIP; i++) {
     led_list[i].pin = 0;
-    led_list[i].numpixels = 0;
+    //led_list[i].numpixels = 0;
     led_list[i].color = 0;
     led_list[i].action = 0;
     led_list[i].pixels = NULL;
@@ -1137,11 +1139,12 @@ void loop()
 #endif
 
   if (light_init == 1) {
-    delay(100);
+    delay(20);
     for (int i = 0; i < MAX_NEOPIXEL_STRIP; i++) {
       // For a set of NeoPixels the first NeoPixel is 0, second is 1, all the way up to the count of pixels minus one.
       if (led_list[i].pin > 0) { // Check Neopixel LED Strip
-        for(int j=0;j < led_list[i].numpixels; j++){
+        //for(int j=0;j < led_list[i].numpixels; j++){
+        for(int j=0;j < led_list[i].pixels->numPixels(); j++){
           // led_list[i].pixels->Color takes RGB values, from 0,0,0 up to 255,255,255
           if (led_list[i].action == 1) { // Turn On
             if (led_list[i].color == 0) { // White Color
@@ -1157,9 +1160,10 @@ void loop()
             }
           } else { // Turn Off
             led_list[i].pixels->setPixelColor(j, led_list[i].pixels->Color(0,0,0)); // Moderately bright green color.
+            //led_list[i].pixels->clear();
           }
           led_list[i].pixels->show(); // This sends the updated pixel color to the hardware.
-          //delay(10); // Delay for a period of time (in milliseconds).
+          delay(20); // Delay for a period of time (in milliseconds).
         }
       }
     }
