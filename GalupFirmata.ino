@@ -984,6 +984,53 @@ void sysexCallback(byte command, byte argc, byte *argv)
       Serial.write(END_SYSEX);
       break;
     }
+    case 0x58: // LeakReport
+    {
+      byte pin = argv[0];
+      byte LEAKsensorPin;
+      if (pin == 0) {
+        LEAKsensorPin = A0;
+      } else if (pin == 1) {
+        LEAKsensorPin = A1;
+      } else if (pin == 2) {
+        LEAKsensorPin = A2;
+      } else if (pin == 3) {
+        LEAKsensorPin = A3;
+      } else if (pin == 4) {
+        LEAKsensorPin = A4;
+      } else if (pin == 5) {
+        LEAKsensorPin = A5;
+      } else {
+        LEAKsensorPin = A3;
+      }
+
+      //Conductive Fluid Sensing Cable
+      //Read analog pin and take measures
+      float voltage = 5.0;
+      long medianvalue = 0;
+	    float voltageR2;
+      // turn on internal pullup resistor
+      digitalWrite(LEAKsensorPin, INPUT_PULLUP);
+      delay(100);
+      for(int i=0;i<5;i++){
+          medianvalue+=analogRead(LEAKsensorPin);
+      }
+      medianvalue=trunc(medianvalue/5);
+      //Voltage divider calculation
+      voltageR2=(voltage/1023.0)*medianvalue;
+
+      Serial.write(START_SYSEX);
+      Serial.write(STRING_DATA);
+      Serial.print("LEAK,");
+      if (voltageR2 < 4.85){
+          Serial.print("YES");  
+      } else {
+          Serial.print("NO");
+      }
+      Serial.println();
+      Serial.write(END_SYSEX);
+      break;
+    }
     case SERIAL_MESSAGE:
 #ifdef FIRMATA_SERIAL_FEATURE
       serialFeature.handleSysex(command, argc, argv);
