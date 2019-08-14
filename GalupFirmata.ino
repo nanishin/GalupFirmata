@@ -20,7 +20,7 @@
 
   See file LICENSE.txt for further informations on licensing terms.
 
-  Last updated October 16th, 2016
+  Last updated August 17th, 2017
 */
 
 #include <Servo.h>
@@ -56,7 +56,7 @@
 
 // DFROBOT PH Meter Support
 #define PH_ARRAY_LENGTH 40
-#define PH_OFFSET 0.0
+#define PH_OFFSET -1.0
 
 // DFROBOT EC Meter Support
 #include <OneWire.h>
@@ -718,7 +718,7 @@ void sysexCallback(byte command, byte argc, byte *argv)
     case I2C_CONFIG:
       delayTime = (argv[0] + (argv[1] << 7));
 
-      if (delayTime > 0) {
+      if (argc > 1 && delayTime > 0) {
         i2cReadDelayTime = delayTime;
       }
 
@@ -1122,7 +1122,7 @@ void setup()
   // Firmata.begin(Serial1);
   // However do not do this if you are using SERIAL_MESSAGE
 
-  Firmata.begin(57600);
+  Firmata.begin(115200);
   while (!Serial) {
     ; // wait for serial port to connect. Needed for ATmega32u4-based boards and Arduino 101
   }
